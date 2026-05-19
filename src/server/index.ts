@@ -40,11 +40,13 @@ export class Chat extends Server<Env> {
 		this.messages = [];
 		this.ctx.storage.sql.exec(`DELETE FROM messages`);
 
-		// 通知所有在线客户端
+		// 通知所有在线客户端：消息已清除
 		this.broadcast(JSON.stringify({ type: "clear" } satisfies Message));
 
-		// 重新设置下一次清空
-		this.ctx.storage.setAlarm(Date.now() + CLEAR_INTERVAL_MS);
+		// 重新设置下一次清空，并广播新的倒计时目标
+		const nextClearAt = Date.now() + CLEAR_INTERVAL_MS;
+		await this.ctx.storage.setAlarm(nextClearAt);
+		this.broadcast(JSON.stringify({ type: "timer", nextClearAt } satisfies Message));
 	}
 
 	getOnlineCount(): number {
@@ -60,7 +62,7 @@ export class Chat extends Server<Env> {
 		);
 	}
 
-	onConnect(connection: Connection) {
+	async onConnect(connection: Connection) {
 		// 发送历史消息给新连接
 		connection.send(
 			JSON.stringify({
@@ -68,6 +70,12 @@ export class Chat extends Server<Env> {
 				messages: this.messages,
 			} satisfies Message),
 		);
+
+		// 发送下次清除时间戳（让客户端倒计时与服务端完全同步）
+		const alarmTime = await this.ctx.storage.getAlarm();
+		const nextClearAt = alarmTime ?? Date.now() + CLEAR_INTERVAL_MS;
+		connection.send(JSON.stringify({ type: "timer", nextClearAt } satisfies Message));
+
 		// 向所有人广播最新在线人数
 		this.broadcastOnlineCount();
 	}

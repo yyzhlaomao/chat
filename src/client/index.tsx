@@ -24,8 +24,9 @@ const ROOMS = [
 type RoomKey = typeof ROOMS[number]["key"];
 const VALID_KEYS = ROOMS.map((r) => r.key) as string[];
 
-const NICKNAME_KEY  = "chat-nickname";
-const MAX_NICK_LEN  = 20;
+const NICKNAME_KEY = "chat-nickname";
+const MAX_NICK_LEN = 20;
+const CLEAR_INTERVAL_MS = 10 * 60 * 1000;
 
 // ── 工具函数 ──────────────────────────────────────────────
 function hashCode(str: string): number {
@@ -50,18 +51,24 @@ function deriveDefaultName(userId: string): string {
 	return `${names[index]}#${userId.slice(0, 4)}`;
 }
 
-/** 读取用户保存的自定义昵称，没有则返回 null */
 function getStoredNickname(): string | null {
 	return localStorage.getItem(NICKNAME_KEY);
 }
 
-/** 保存昵称，传 null 则清除（恢复默认） */
 function saveNickname(nick: string | null) {
 	if (nick) {
 		localStorage.setItem(NICKNAME_KEY, nick);
 	} else {
 		localStorage.removeItem(NICKNAME_KEY);
 	}
+}
+
+/** 将剩余毫秒格式化为 MM:SS */
+function formatCountdown(ms: number): string {
+	const total = Math.max(0, Math.floor(ms / 1000));
+	const m = Math.floor(total / 60);
+	const s = total % 60;
+	return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 // ── 昵称编辑组件 ──────────────────────────────────────────
@@ -72,12 +79,11 @@ interface NicknameEditorProps {
 }
 
 function NicknameEditor({ name, defaultName, onChange }: NicknameEditorProps) {
-	const [editing, setEditing]   = useState(false);
-	const [draft, setDraft]       = useState(name);
-	const [error, setError]       = useState("");
+	const [editing, setEditing] = useState(false);
+	const [draft, setDraft]     = useState(name);
+	const [error, setError]     = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	// 进入编辑模式时自动聚焦并全选
 	useEffect(() => {
 		if (editing) {
 			inputRef.current?.focus();
@@ -93,24 +99,15 @@ function NicknameEditor({ name, defaultName, onChange }: NicknameEditorProps) {
 
 	function confirm() {
 		const trimmed = draft.trim();
-		if (!trimmed) {
-			setError("昵称不能为空");
-			return;
-		}
-		if (trimmed.length > MAX_NICK_LEN) {
-			setError(`最多 ${MAX_NICK_LEN} 个字符`);
-			return;
-		}
+		if (!trimmed) { setError("昵称不能为空"); return; }
+		if (trimmed.length > MAX_NICK_LEN) { setError(`最多 ${MAX_NICK_LEN} 个字符`); return; }
 		saveNickname(trimmed);
 		onChange(trimmed);
 		setEditing(false);
 		setError("");
 	}
 
-	function cancel() {
-		setEditing(false);
-		setError("");
-	}
+	function cancel() { setEditing(false); setError(""); }
 
 	function resetToDefault() {
 		saveNickname(null);
@@ -148,10 +145,40 @@ function NicknameEditor({ name, defaultName, onChange }: NicknameEditorProps) {
 	return (
 		<span className="nickname-editor">
 			<strong>{name}</strong>
-			<button className="nick-edit-btn" onClick={startEdit} title="修改昵称">
-				✏️
-			</button>
+			<button className="nick-edit-btn" onClick={startEdit} title="修改昵称">✏️</button>
 		</span>
+	);
+}
+
+// ── 右上角信息面板（在线人数 + 倒计时）────────────────────
+function InfoPanel({ onlineCount, nextClearAt }: { onlineCount: number; nextClearAt: number }) {
+	const [countdown, setCountdown] = useState(() =>
+		formatCountdown(nextClearAt - Date.now()),
+	);
+
+	// 每秒更新倒计时
+	useEffect(() => {
+		setCountdown(formatCountdown(nextClearAt - Date.now()));
+		const timer = setInterval(() => {
+			setCountdown(formatCountdown(nextClearAt - Date.now()));
+		}, 1000);
+		return () => clearInterval(timer);
+	}, [nextClearAt]);
+
+	// 剩余时间不足 60 秒时变红提示
+	const isUrgent = nextClearAt - Date.now() < 60_000;
+
+	return (
+		<div className="info-panel">
+			<div className="info-row">
+				<span className="online-dot" />
+				{onlineCount} 人在线
+			</div>
+			<div className={`info-row timer-row${isUrgent ? " urgent" : ""}`}>
+				<span className="timer-icon">⏱</span>
+				{countdown} 后清除
+			</div>
+		</div>
 	);
 }
 
@@ -178,11 +205,12 @@ function ChatRoom({ room }: { room: RoomKey }) {
 	const userId      = getOrCreateUserId();
 	const defaultName = deriveDefaultName(userId);
 
-	const [name, setName]           = useState(getStoredNickname() ?? defaultName);
-	const [messages, setMessages]   = useState<ChatMessage[]>([]);
+	const [name, setName]               = useState(getStoredNickname() ?? defaultName);
+	const [messages, setMessages]       = useState<ChatMessage[]>([]);
 	const [onlineCount, setOnlineCount] = useState<number>(0);
+	// 默认：当前时间 + 10 分钟，连接后服务端会发来精确值
+	const [nextClearAt, setNextClearAt] = useState<number>(Date.now() + CLEAR_INTERVAL_MS);
 
-	// name 变化时同步到 ref，供 socket 闭包使用
 	const nameRef = useRef(name);
 	useEffect(() => { nameRef.current = name; }, [name]);
 
@@ -192,7 +220,9 @@ function ChatRoom({ room }: { room: RoomKey }) {
 		onMessage: (evt) => {
 			const message = JSON.parse(evt.data as string) as Message;
 
-			if (message.type === "online") {
+			if (message.type === "timer") {
+				setNextClearAt(message.nextClearAt);
+			} else if (message.type === "online") {
 				setOnlineCount(message.count);
 			} else if (message.type === "clear") {
 				setMessages([]);
@@ -227,24 +257,14 @@ function ChatRoom({ room }: { room: RoomKey }) {
 
 	return (
 		<div className="chat container">
-			{/* 右上角在线人数 */}
-			<div className="online-badge">
-				<span className="online-dot" />
-				{onlineCount} 人在线
-			</div>
+			{/* 右上角：在线人数 + 倒计时 */}
+			<InfoPanel onlineCount={onlineCount} nextClearAt={nextClearAt} />
 
-			{/* 状态栏：昵称（可编辑）+ 提示 */}
+			{/* 状态栏：昵称（可编辑）*/}
 			<div className="row status-bar">
 				<div className="twelve columns">
 					<span style={{ opacity: 0.6, marginRight: "6px" }}>你的名称：</span>
-					<NicknameEditor
-						name={name}
-						defaultName={defaultName}
-						onChange={setName}
-					/>
-					<span style={{ marginLeft: "1rem", fontSize: "0.85em", opacity: 0.5 }}>
-						（聊天记录每 10 分钟自动清除）
-					</span>
+					<NicknameEditor name={name} defaultName={defaultName} onChange={setName} />
 				</div>
 			</div>
 
@@ -266,7 +286,7 @@ function ChatRoom({ room }: { room: RoomKey }) {
 					const chatMessage: ChatMessage = {
 						id: nanoid(8),
 						content: content.value,
-						user: nameRef.current,   // 始终用最新昵称
+						user: nameRef.current,
 						role: "user",
 					};
 					setMessages((prev) => [...prev, chatMessage]);

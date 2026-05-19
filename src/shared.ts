@@ -30,6 +30,10 @@ export type Message =
 	| {
 			type: "online";
 			count: number;
+	  }
+	| {
+			type: "timer";
+			nextClearAt: number; // Unix 毫秒时间戳
 	  };
 
 export const names = [
