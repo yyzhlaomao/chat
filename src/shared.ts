@@ -23,6 +23,9 @@ export type Message =
 	| {
 			type: "all";
 			messages: ChatMessage[];
+	  }
+	| {
+			type: "clear";
 	  };
 
 export const names = [

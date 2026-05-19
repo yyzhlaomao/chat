@@ -6,26 +6,56 @@ import {
 	Routes,
 	Route,
 	Navigate,
-	useParams,
 } from "react-router";
 import { nanoid } from "nanoid";
 
 import { names, type ChatMessage, type Message } from "../shared";
 
+const PUBLIC_ROOM = "public";
+
+// 将字符串哈希为非负整数
+function hashCode(str: string): number {
+	let hash = 0;
+	for (let i = 0; i < str.length; i++) {
+		hash = (hash << 5) - hash + str.charCodeAt(i);
+		hash |= 0;
+	}
+	return Math.abs(hash);
+}
+
+// 首次访问生成 ID 并存入 localStorage，之后复用
+function getOrCreateUserId(): string {
+	const stored = localStorage.getItem("chat-user-id");
+	if (stored) return stored;
+	const id = nanoid(16);
+	localStorage.setItem("chat-user-id", id);
+	return id;
+}
+
+// 根据用户 ID 派生固定名称，格式：Alice#a3f2
+function deriveUserName(userId: string): string {
+	const index = hashCode(userId) % names.length;
+	return `${names[index]}#${userId.slice(0, 4)}`;
+}
+
 function App() {
-	const [name] = useState(names[Math.floor(Math.random() * names.length)]);
+	const userId = getOrCreateUserId();
+	const name = deriveUserName(userId);
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
-	const { room } = useParams();
 
 	const socket = usePartySocket({
 		party: "chat",
-		room,
+		room: PUBLIC_ROOM,
 		onMessage: (evt) => {
 			const message = JSON.parse(evt.data as string) as Message;
-			if (message.type === "add") {
+
+			if (message.type === "clear") {
+				setMessages([]);
+			} else if (message.type === "all") {
+				setMessages(message.messages);
+			} else if (message.type === "add") {
 				const foundIndex = messages.findIndex((m) => m.id === message.id);
 				if (foundIndex === -1) {
-					// probably someone else who added a message
 					setMessages((messages) => [
 						...messages,
 						{
@@ -36,11 +66,8 @@ function App() {
 						},
 					]);
 				} else {
-					// this usually means we ourselves added a message
-					// and it was broadcasted back
-					// so let's replace the message with the new message
-					setMessages((messages) => {
-						return messages
+					setMessages((messages) =>
+						messages
 							.slice(0, foundIndex)
 							.concat({
 								id: message.id,
@@ -48,8 +75,8 @@ function App() {
 								user: message.user,
 								role: message.role,
 							})
-							.concat(messages.slice(foundIndex + 1));
-					});
+							.concat(messages.slice(foundIndex + 1)),
+					);
 				}
 			} else if (message.type === "update") {
 				setMessages((messages) =>
@@ -64,14 +91,20 @@ function App() {
 							: m,
 					),
 				);
-			} else {
-				setMessages(message.messages);
 			}
 		},
 	});
 
 	return (
 		<div className="chat container">
+			<div className="row" style={{ marginBottom: "0.5rem", opacity: 0.6 }}>
+				<div className="twelve columns">
+					你的名称：<strong>{name}</strong>
+					<span style={{ marginLeft: "1rem", fontSize: "0.85em" }}>
+						（聊天记录每 10 分钟自动清除）
+					</span>
+				</div>
+			</div>
 			{messages.map((message) => (
 				<div key={message.id} className="row message">
 					<div className="two columns user">{message.user}</div>
@@ -85,6 +118,7 @@ function App() {
 					const content = e.currentTarget.elements.namedItem(
 						"content",
 					) as HTMLInputElement;
+					if (!content.value.trim()) return;
 					const chatMessage: ChatMessage = {
 						id: nanoid(8),
 						content: content.value,
@@ -92,7 +126,6 @@ function App() {
 						role: "user",
 					};
 					setMessages((messages) => [...messages, chatMessage]);
-					// we could broadcast the message here
 
 					socket.send(
 						JSON.stringify({
@@ -108,11 +141,11 @@ function App() {
 					type="text"
 					name="content"
 					className="ten columns my-input-text"
-					placeholder={`Hello ${name}! Type a message...`}
+					placeholder={`${name}，说点什么...`}
 					autoComplete="off"
 				/>
 				<button type="submit" className="send-message two columns">
-					Send
+					发送
 				</button>
 			</form>
 		</div>
@@ -123,7 +156,7 @@ function App() {
 createRoot(document.getElementById("root")!).render(
 	<BrowserRouter>
 		<Routes>
-			<Route path="/" element={<Navigate to={`/${nanoid()}`} />} />
+			<Route path="/" element={<Navigate to={`/${PUBLIC_ROOM}`} />} />
 			<Route path="/:room" element={<App />} />
 			<Route path="*" element={<Navigate to="/" />} />
 		</Routes>
