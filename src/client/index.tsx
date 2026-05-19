@@ -107,8 +107,8 @@ function App() {
 			</div>
 			{messages.map((message) => (
 				<div key={message.id} className="row message">
-					<div className="two columns user">{message.user}</div>
-					<div className="ten columns">{message.content}</div>
+					<div className="three columns user">{message.user}</div>
+					<div className="nine columns">{message.content}</div>
 				</div>
 			))}
 			<form
