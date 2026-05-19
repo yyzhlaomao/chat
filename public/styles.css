@@ -8,7 +8,7 @@ html {
 }
 
 .chat {
-	padding-top: 40px;
+	padding-top: 70px; /* 为顶部固定 tabs 留出空间 */
 }
 
 #root {
@@ -82,4 +82,42 @@ html {
 
 .my-input-text::placeholder {
 	color: #ccc;
+}
+
+/* ── 房间切换栏 ─────────────────────────────────────────── */
+.room-tabs {
+	position: fixed;
+	top: 12px;
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	gap: 4px;
+	z-index: 1000;
+	background: #fff;
+	border: 1px solid #e0e0e0;
+	border-radius: 999px;
+	padding: 4px;
+	box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+}
+
+.room-tab {
+	border: none;
+	background: transparent;
+	border-radius: 999px;
+	padding: 6px 18px;
+	font-size: 0.9em;
+	cursor: pointer;
+	color: #555;
+	transition: background 0.15s, color 0.15s;
+	white-space: nowrap;
+}
+
+.room-tab:hover {
+	background: #f3f4f6;
+	color: #111;
+}
+
+.room-tab.active {
+	background: #111;
+	color: #fff;
 }
