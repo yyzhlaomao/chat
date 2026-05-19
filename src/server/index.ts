@@ -47,13 +47,34 @@ export class Chat extends Server<Env> {
 		this.ctx.storage.setAlarm(Date.now() + CLEAR_INTERVAL_MS);
 	}
 
+	getOnlineCount(): number {
+		return [...this.getConnections()].length;
+	}
+
+	broadcastOnlineCount() {
+		this.broadcast(
+			JSON.stringify({
+				type: "online",
+				count: this.getOnlineCount(),
+			} satisfies Message),
+		);
+	}
+
 	onConnect(connection: Connection) {
+		// 发送历史消息给新连接
 		connection.send(
 			JSON.stringify({
 				type: "all",
 				messages: this.messages,
 			} satisfies Message),
 		);
+		// 向所有人广播最新在线人数
+		this.broadcastOnlineCount();
+	}
+
+	onClose(_connection: Connection) {
+		// 有人离开时更新在线人数
+		this.broadcastOnlineCount();
 	}
 
 	saveMessage(message: ChatMessage) {

@@ -49,6 +49,37 @@ html {
 	padding: 0;
 }
 
+.online-badge {
+	position: fixed;
+	top: 16px;
+	right: 20px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background: #fff;
+	border: 1px solid #e0e0e0;
+	border-radius: 999px;
+	padding: 4px 12px;
+	font-size: 0.85em;
+	color: #444;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+	z-index: 999;
+}
+
+.online-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #22c55e;
+	display: inline-block;
+	animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+	0%, 100% { opacity: 1; }
+	50%       { opacity: 0.4; }
+}
+
 .my-input-text::placeholder {
 	color: #ccc;
 }

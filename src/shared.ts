@@ -26,6 +26,10 @@ export type Message =
 	  }
 	| {
 			type: "clear";
+	  }
+	| {
+			type: "online";
+			count: number;
 	  };
 
 export const names = [

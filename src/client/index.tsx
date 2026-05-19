@@ -42,6 +42,7 @@ function App() {
 	const userId = getOrCreateUserId();
 	const name = deriveUserName(userId);
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
+	const [onlineCount, setOnlineCount] = useState<number>(0);
 
 	const socket = usePartySocket({
 		party: "chat",
@@ -49,7 +50,9 @@ function App() {
 		onMessage: (evt) => {
 			const message = JSON.parse(evt.data as string) as Message;
 
-			if (message.type === "clear") {
+			if (message.type === "online") {
+				setOnlineCount(message.count);
+			} else if (message.type === "clear") {
 				setMessages([]);
 			} else if (message.type === "all") {
 				setMessages(message.messages);
@@ -97,6 +100,10 @@ function App() {
 
 	return (
 		<div className="chat container">
+			<div className="online-badge">
+				<span className="online-dot" />
+				{onlineCount} 人在线
+			</div>
 			<div className="row" style={{ marginBottom: "0.5rem", opacity: 0.6 }}>
 				<div className="twelve columns">
 					你的名称：<strong>{name}</strong>
