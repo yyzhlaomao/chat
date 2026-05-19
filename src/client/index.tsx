@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { usePartySocket } from "partysocket/react";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
 	BrowserRouter,
 	Routes,
@@ -22,8 +22,10 @@ const ROOMS = [
 ] as const;
 
 type RoomKey = typeof ROOMS[number]["key"];
-
 const VALID_KEYS = ROOMS.map((r) => r.key) as string[];
+
+const NICKNAME_KEY  = "chat-nickname";
+const MAX_NICK_LEN  = 20;
 
 // ── 工具函数 ──────────────────────────────────────────────
 function hashCode(str: string): number {
@@ -43,9 +45,114 @@ function getOrCreateUserId(): string {
 	return id;
 }
 
-function deriveUserName(userId: string): string {
+function deriveDefaultName(userId: string): string {
 	const index = hashCode(userId) % names.length;
 	return `${names[index]}#${userId.slice(0, 4)}`;
+}
+
+/** 读取用户保存的自定义昵称，没有则返回 null */
+function getStoredNickname(): string | null {
+	return localStorage.getItem(NICKNAME_KEY);
+}
+
+/** 保存昵称，传 null 则清除（恢复默认） */
+function saveNickname(nick: string | null) {
+	if (nick) {
+		localStorage.setItem(NICKNAME_KEY, nick);
+	} else {
+		localStorage.removeItem(NICKNAME_KEY);
+	}
+}
+
+// ── 昵称编辑组件 ──────────────────────────────────────────
+interface NicknameEditorProps {
+	name: string;
+	defaultName: string;
+	onChange: (newName: string) => void;
+}
+
+function NicknameEditor({ name, defaultName, onChange }: NicknameEditorProps) {
+	const [editing, setEditing]   = useState(false);
+	const [draft, setDraft]       = useState(name);
+	const [error, setError]       = useState("");
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	// 进入编辑模式时自动聚焦并全选
+	useEffect(() => {
+		if (editing) {
+			inputRef.current?.focus();
+			inputRef.current?.select();
+		}
+	}, [editing]);
+
+	function startEdit() {
+		setDraft(name);
+		setError("");
+		setEditing(true);
+	}
+
+	function confirm() {
+		const trimmed = draft.trim();
+		if (!trimmed) {
+			setError("昵称不能为空");
+			return;
+		}
+		if (trimmed.length > MAX_NICK_LEN) {
+			setError(`最多 ${MAX_NICK_LEN} 个字符`);
+			return;
+		}
+		saveNickname(trimmed);
+		onChange(trimmed);
+		setEditing(false);
+		setError("");
+	}
+
+	function cancel() {
+		setEditing(false);
+		setError("");
+	}
+
+	function resetToDefault() {
+		saveNickname(null);
+		onChange(defaultName);
+		setEditing(false);
+		setError("");
+	}
+
+	if (editing) {
+		return (
+			<span className="nickname-editor">
+				<input
+					ref={inputRef}
+					className="nickname-input"
+					value={draft}
+					maxLength={MAX_NICK_LEN}
+					onChange={(e) => { setDraft(e.target.value); setError(""); }}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") confirm();
+						if (e.key === "Escape") cancel();
+					}}
+				/>
+				<button className="nick-btn confirm" onClick={confirm} title="确认">✓</button>
+				<button className="nick-btn cancel"  onClick={cancel}  title="取消">✗</button>
+				{name !== defaultName && (
+					<button className="nick-btn reset" onClick={resetToDefault} title="恢复默认">
+						恢复默认
+					</button>
+				)}
+				{error && <span className="nick-error">{error}</span>}
+			</span>
+		);
+	}
+
+	return (
+		<span className="nickname-editor">
+			<strong>{name}</strong>
+			<button className="nick-edit-btn" onClick={startEdit} title="修改昵称">
+				✏️
+			</button>
+		</span>
+	);
 }
 
 // ── 顶部房间切换栏 ─────────────────────────────────────────
@@ -66,12 +173,18 @@ function RoomTabs({ currentRoom }: { currentRoom: string }) {
 	);
 }
 
-// ── 聊天区（key=room 确保切换房间时完整重置状态）────────────
+// ── 聊天区 ────────────────────────────────────────────────
 function ChatRoom({ room }: { room: RoomKey }) {
-	const userId = getOrCreateUserId();
-	const name = deriveUserName(userId);
-	const [messages, setMessages] = useState<ChatMessage[]>([]);
+	const userId      = getOrCreateUserId();
+	const defaultName = deriveDefaultName(userId);
+
+	const [name, setName]           = useState(getStoredNickname() ?? defaultName);
+	const [messages, setMessages]   = useState<ChatMessage[]>([]);
 	const [onlineCount, setOnlineCount] = useState<number>(0);
+
+	// name 变化时同步到 ref，供 socket 闭包使用
+	const nameRef = useRef(name);
+	useEffect(() => { nameRef.current = name; }, [name]);
 
 	const socket = usePartySocket({
 		party: "chat",
@@ -90,23 +203,13 @@ function ChatRoom({ room }: { room: RoomKey }) {
 				if (foundIndex === -1) {
 					setMessages((prev) => [
 						...prev,
-						{
-							id: message.id,
-							content: message.content,
-							user: message.user,
-							role: message.role,
-						},
+						{ id: message.id, content: message.content, user: message.user, role: message.role },
 					]);
 				} else {
 					setMessages((prev) =>
 						prev
 							.slice(0, foundIndex)
-							.concat({
-								id: message.id,
-								content: message.content,
-								user: message.user,
-								role: message.role,
-							})
+							.concat({ id: message.id, content: message.content, user: message.user, role: message.role })
 							.concat(prev.slice(foundIndex + 1)),
 					);
 				}
@@ -114,12 +217,7 @@ function ChatRoom({ room }: { room: RoomKey }) {
 				setMessages((prev) =>
 					prev.map((m) =>
 						m.id === message.id
-							? {
-									id: message.id,
-									content: message.content,
-									user: message.user,
-									role: message.role,
-								}
+							? { id: message.id, content: message.content, user: message.user, role: message.role }
 							: m,
 					),
 				);
@@ -135,11 +233,16 @@ function ChatRoom({ room }: { room: RoomKey }) {
 				{onlineCount} 人在线
 			</div>
 
-			{/* 当前用户名提示 */}
-			<div className="row" style={{ marginBottom: "0.5rem", opacity: 0.6 }}>
+			{/* 状态栏：昵称（可编辑）+ 提示 */}
+			<div className="row status-bar">
 				<div className="twelve columns">
-					你的名称：<strong>{name}</strong>
-					<span style={{ marginLeft: "1rem", fontSize: "0.85em" }}>
+					<span style={{ opacity: 0.6, marginRight: "6px" }}>你的名称：</span>
+					<NicknameEditor
+						name={name}
+						defaultName={defaultName}
+						onChange={setName}
+					/>
+					<span style={{ marginLeft: "1rem", fontSize: "0.85em", opacity: 0.5 }}>
 						（聊天记录每 10 分钟自动清除）
 					</span>
 				</div>
@@ -158,20 +261,16 @@ function ChatRoom({ room }: { room: RoomKey }) {
 				className="row"
 				onSubmit={(e) => {
 					e.preventDefault();
-					const content = e.currentTarget.elements.namedItem(
-						"content",
-					) as HTMLInputElement;
+					const content = e.currentTarget.elements.namedItem("content") as HTMLInputElement;
 					if (!content.value.trim()) return;
 					const chatMessage: ChatMessage = {
 						id: nanoid(8),
 						content: content.value,
-						user: name,
+						user: nameRef.current,   // 始终用最新昵称
 						role: "user",
 					};
 					setMessages((prev) => [...prev, chatMessage]);
-					socket.send(
-						JSON.stringify({ type: "add", ...chatMessage } satisfies Message),
-					);
+					socket.send(JSON.stringify({ type: "add", ...chatMessage } satisfies Message));
 					content.value = "";
 				}}
 			>
@@ -190,7 +289,7 @@ function ChatRoom({ room }: { room: RoomKey }) {
 	);
 }
 
-// ── 房间页（路由验证 + 组合渲染）────────────────────────────
+// ── 房间页 ────────────────────────────────────────────────
 function RoomPage() {
 	const { room } = useParams<{ room: string }>();
 	if (!room || !VALID_KEYS.includes(room)) {
@@ -199,7 +298,6 @@ function RoomPage() {
 	return (
 		<>
 			<RoomTabs currentRoom={room} />
-			{/* key 变化时 ChatRoom 完整重建，消息/人数状态自动清空 */}
 			<ChatRoom key={room} room={room as RoomKey} />
 		</>
 	);

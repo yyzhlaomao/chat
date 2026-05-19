@@ -84,6 +84,92 @@ html {
 	color: #ccc;
 }
 
+/* ── 状态栏 ─────────────────────────────────────────────── */
+.status-bar {
+	margin-bottom: 0.5rem;
+	font-size: 0.9em;
+}
+
+/* ── 昵称编辑器 ──────────────────────────────────────────── */
+.nickname-editor {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.nick-edit-btn {
+	border: none;
+	background: none;
+	cursor: pointer;
+	font-size: 0.85em;
+	padding: 0 4px;
+	opacity: 0.45;
+	transition: opacity 0.15s;
+	line-height: 1;
+}
+
+.nick-edit-btn:hover {
+	opacity: 1;
+}
+
+.nickname-input {
+	border: 1px solid #bbb;
+	border-radius: 6px;
+	padding: 2px 8px;
+	font-size: 0.95em;
+	width: 140px;
+	outline: none;
+	transition: border-color 0.15s;
+}
+
+.nickname-input:focus {
+	border-color: #555;
+}
+
+.nick-btn {
+	border: 1px solid #ddd;
+	background: #fff;
+	border-radius: 6px;
+	padding: 2px 8px;
+	font-size: 0.85em;
+	cursor: pointer;
+	transition: background 0.15s;
+	line-height: 1.4;
+}
+
+.nick-btn.confirm {
+	color: #16a34a;
+	border-color: #bbf7d0;
+}
+
+.nick-btn.confirm:hover {
+	background: #f0fdf4;
+}
+
+.nick-btn.cancel {
+	color: #dc2626;
+	border-color: #fecaca;
+}
+
+.nick-btn.cancel:hover {
+	background: #fef2f2;
+}
+
+.nick-btn.reset {
+	color: #666;
+	font-size: 0.8em;
+}
+
+.nick-btn.reset:hover {
+	background: #f3f4f6;
+}
+
+.nick-error {
+	color: #dc2626;
+	font-size: 0.8em;
+	margin-left: 4px;
+}
+
 /* ── 房间切换栏 ─────────────────────────────────────────── */
 .room-tabs {
 	position: fixed;
